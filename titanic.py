@@ -10,7 +10,8 @@ class Predictor():
     """
 
     def __init__(self):
-        self.prediction = None
+        self.training_prediction = None
+        self.test_prediction = None
 
     def train(self, training_people):
         """Train the machine learning algorithm."""
@@ -21,12 +22,16 @@ class Predictor():
         raise NotImplementedError
 
     def evaluate_prediction(self):
-        people = self.prediction
-        prediction_accuracy = \
-            len(people.loc[people['Survived'] == people['SurvivalPrediction']].index) / len(people.index)
-        print("{name}: {accuracy:.3f}".format(
+        training_people = self.training_prediction
+        test_people = self.test_prediction
+        training_prediction_accuracy = \
+            len(training_people.loc[training_people['Survived'] == training_people['SurvivalPrediction']].index) / len(training_people.index)
+        test_prediction_accuracy = \
+            len(test_people.loc[test_people['Survived'] == test_people['SurvivalPrediction']].index) / len(test_people.index)
+        print("{name}: {training_accuracy:.3f} Training score, {test_accuracy:.3f} Cross-validation score".format(
             name=type(self).__name__,
-            accuracy=prediction_accuracy
+            training_accuracy=training_prediction_accuracy,
+            test_accuracy=test_prediction_accuracy
         ))
 
 
@@ -34,7 +39,7 @@ class ConstantPredictor(Predictor):
 
     def predict(self, people):
         people['SurvivalPrediction'] = Series(0, index=people.index)
-        self.prediction = people
+        return people
 
 
 class GenderPredictor(Predictor):
@@ -47,8 +52,8 @@ class GenderPredictor(Predictor):
             'female': 1,
             'male': 0
         }
-        people['SurvivalPrediction'] = Series(people['Sex'].map(gender_survival_map), index=people.index)
-        self.prediction = people
+        people['SurvivalPrediction'] = people['Sex'].map(gender_survival_map)
+        return people
 
 
 class GenderClassPredictor(Predictor):
@@ -57,6 +62,12 @@ class GenderClassPredictor(Predictor):
     def __init__(self):
         self.prediction_mapping = {}  # Maps (Sex, Pclass) tuples to prediction (0 -> died, 1 -> survived)
         super().__init__()
+
+    def load_prediction(self, person: Series) -> int: # testing out static type annotations in python
+        """
+        Helper function for passing the right bits of a person into the prediction_mapping dictionary.
+        """
+        return self.prediction_mapping[(person['Sex'], person['Pclass'])]
 
     def train(self, people):
         self.sexes = people['Sex'].unique()
@@ -73,8 +84,8 @@ class GenderClassPredictor(Predictor):
                 self.prediction_mapping[(sex, p_class)] = prediction
 
     def predict(self, people):
-        people['SurvivalPrediction'] = Series(Series(people[['Sex', 'Pclass']].to_records()).map(self.prediction_mapping), index=people.index)
-
+        people['SurvivalPrediction'] = people[['Sex', 'Pclass']].apply(self.load_prediction, axis=1)
+        return people
 
 
 def load_data(live=False):
@@ -99,7 +110,8 @@ def main():
     ]
     for predictor in predictors:
         predictor.train(training_people)
-        predictor.predict(test_people)
+        predictor.training_prediction = predictor.predict(training_people)
+        predictor.test_prediction = predictor.predict(test_people)
         predictor.evaluate_prediction()
 
 
